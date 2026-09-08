@@ -330,9 +330,7 @@ Resolves to:
 {
   "type": "object",
   "properties": {
-    "p": {
-      "type": "string" }
-    },
+    "p": { "type": "string" },
   },
   "additionalProperties": false
 }

@@ -36,18 +36,18 @@ function deepMerge(target: any, source: any) {
 }
 
 function deepPatch(target: any, source: any) {
-  const result = { ...target, ...source };
-  console.log(result);
-  for (const key of Object.keys(result)) {
+  const result = { ...target };
+  for (const key of Object.keys(target)) {
     if (typeof target[key] == "object" && typeof source[key] == "object") {
-      result[key] = deepMerge(target[key], source[key]);
-    } else if (target[key] == null) {
-      delete result[key];
+      const patch = deepPatch(target[key], source[key]);
+      if (patch) result[key] = patch;
+      else delete result[key];
+    } else if (source === null) {
+      return null;
     } else {
       result[key] = structuredClone(result[key]);
     }
   }
-  console.log(result);
   return result;
 }
 
