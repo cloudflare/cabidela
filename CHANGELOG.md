@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.5] - 2025-03-27
+
+### Changed
+
+- Improved error handling for oneOf, anyOf, allOf
+
 ## [0.2.4] - 2025-03-24
 
 ### Changed

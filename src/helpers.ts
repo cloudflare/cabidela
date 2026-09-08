@@ -35,9 +35,26 @@ function deepMerge(target: any, source: any) {
   return result;
 }
 
+function deepPatch(target: any, source: any) {
+  const result = { ...target };
+  for (const key of Object.keys(target)) {
+    if (typeof target[key] == "object" && typeof source[key] == "object") {
+      const patch = deepPatch(target[key], source[key]);
+      if (patch) result[key] = patch;
+      else delete result[key];
+    } else if (source === null) {
+      return null;
+    } else {
+      result[key] = structuredClone(result[key]);
+    }
+  }
+  return result;
+}
+
 export const traverseSchema = (options: CabidelaOptions, definitions: any, obj: any) => {
   const ts = (obj: any, cb?: any) => {
     let hits: number;
+    if (!obj) return;
     do {
       hits = 0;
       for (const key of Object.keys(obj)) {
@@ -53,6 +70,16 @@ export const traverseSchema = (options: CabidelaOptions, definitions: any, obj: 
             } else {
               // root level
               hits++;
+              Object.assign(obj, merge);
+              delete obj[key];
+            }
+          }
+          if (options.usePatch && key == "$patch") {
+            const merge = deepPatch(obj[key].source, obj[key].with);
+            if (cb) {
+              cb(merge);
+            } else {
+              // root level
               Object.assign(obj, merge);
               delete obj[key];
             }
@@ -76,7 +103,7 @@ export const traverseSchema = (options: CabidelaOptions, definitions: any, obj: 
           }
         }
       }
-    } while (hits > 0);
+    } while (obj && hits > 0);
   };
   ts(obj);
 };

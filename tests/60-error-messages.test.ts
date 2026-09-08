@@ -89,13 +89,13 @@ describe("errorMessages oneOf", () => {
       cabidela.validate({
         missing: "property",
       }),
-    ).toThrowError(/oneOf at '.' not met, 0 matches: prompt required, messages required/);
+    ).toThrowError(/oneOf at '\/' not met, 0 matches found: prompt required, messages required/);
   });
   test.skipIf(process.env.AJV)("messages need role and content", () => {
     expect(() =>
       cabidela.validate({
         messages: [{ role: "user" }],
       }),
-    ).toThrowError(/oneOf at '.' not met, 0 matches: prompt required, messages need both role and content/);
+    ).toThrowError(/oneOf at '\/' not met, 0 matches found: prompt required, messages need both role and content/);
   });
 });

@@ -3,6 +3,7 @@ import { resolvePayload, pathToString, traverseSchema } from "./helpers";
 export type CabidelaOptions = {
   applyDefaults?: boolean;
   useMerge?: boolean;
+  usePatch?: boolean;
   errorMessages?: boolean;
   fullErrors?: boolean;
   subSchemas?: Array<any>;
@@ -30,6 +31,8 @@ export class Cabidela {
     this.options = {
       fullErrors: true,
       subSchemas: [],
+      useMerge: false,
+      usePatch: false,
       applyDefaults: false,
       errorMessages: false,
       ...(options || {}),
@@ -43,7 +46,7 @@ export class Cabidela {
         this.addSchema(subSchema, false);
       }
     }
-    if (this.options.useMerge || (this.options.subSchemas as []).length > 0) {
+    if (this.options.useMerge || this.options.usePatch || (this.options.subSchemas as []).length > 0) {
       traverseSchema(this.options, this.definitions, this.schema);
     }
   }
@@ -139,7 +142,7 @@ export class Cabidela {
     if (needle.schema.hasOwnProperty("maxProperties")) {
       if (Object.keys(needle.payload).length > needle.schema.maxProperties) {
         this.throw(
-          `maxProperties at '${pathToString(needle.path)}' is ${needle.schema.minProperties}, got ${Object.keys(needle.payload).length}`,
+          `maxProperties at '${pathToString(needle.path)}' is ${needle.schema.maxProperties}, got ${Object.keys(needle.payload).length}`,
           needle,
         );
       }
@@ -207,7 +210,7 @@ export class Cabidela {
           absorvErrors: true,
           deferredApplyDefaults: true,
         });
-        rounds += matches;
+        rounds++;
         if (breakCondition && breakCondition(rounds)) break;
         defaultsCallbacks.push(...needle.defaultsCallbacks);
         needle.defaultsCallbacks = [];
@@ -247,9 +250,7 @@ export class Cabidela {
     if (needle.schema.hasOwnProperty("oneOf")) {
       const rounds = this.parseList(needle.schema.oneOf, needle, (r: number) => r !== 1);
       if (rounds !== 1) {
-        if (needle.path.length == 0) {
-          this.throw(`oneOf at '${pathToString(needle.path)}' not met, ${rounds} matches`, needle);
-        }
+        this.throw(`oneOf at '${pathToString(needle.path)}' not met, ${rounds} matches found`, needle);
         return 0;
       }
       return 1;
