@@ -1,5 +1,6 @@
 import { expect, test, describe, it } from "vitest";
 import { FakeCabidela } from "./lib/fake-cabidela";
+import { Cabidela } from "../src";
 import { schemaBlocks } from "./lib/subschemas";
 import fs from "fs";
 
@@ -459,7 +460,8 @@ describe("Ai, Combined Text Generation", () => {
       ],
     };
 
-    const cabidela = new FakeCabidela(schema, { subSchemas: schemaBlocks, useMerge: true, applyDefaults: true });
+    // This asserts Cabidela's materialized schema; AJV does not rewrite its input.
+    const cabidela = new Cabidela(schema, { subSchemas: schemaBlocks, useMerge: true, applyDefaults: true });
     schema = cabidela.getSchema();
     fs.writeFileSync("/tmp/schema.json", JSON.stringify(schema, null, 2));
     expect(schema).toStrictEqual({

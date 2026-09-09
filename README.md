@@ -81,6 +81,14 @@ You can change the schema at any time by calling `cabidela.setSchema(schema: any
 
 You can change the options at any time by calling `cabidela.setOptions(options: CabidelaOptions)`.
 
+`setSchema`, `setOptions`, and `addSchema` prepare references and enabled extensions before committing an update. If preparation fails, the active schema and configuration remain unchanged. Cabidela preserves the root schema object's identity, so `getSchema()` returns the supplied object with its resolved fields. Preparation copies changed branches rather than cloning an unchanged schema.
+
+Use plain JSON data objects for schemas. A frozen or sealed root is usable when preparation leaves it unchanged. If preparation needs to add, remove, or replace a root field, the root must permit those changes; Cabidela checks them before writing and throws if they are not allowed. Accessor properties and proxies are outside this JSON data contract.
+
+Register another schema with `cabidela.addSchema(subSchema)`; its `$id` must be a valid retrieval URI. References resolve immediately by default. `cabidela.addSchema(subSchema, false)` registers it for the next preparation without resolving the current schema yet. For several interdependent schemas, pass them together in `subSchemas` when constructing the validator.
+
+Preparation consumes `$ref`, `$merge`, and `$patch` wrappers. Changing an option later does not reconstruct an earlier source schema or undo an already applied patch; use `setSchema` to install a new source.
+
 ### Validate payload
 
 Call `cabidela.validate(payload: any)` to validate your payload.
@@ -252,7 +260,7 @@ cabidela.validate({
 });
 ```
 
-## Combined schemas, $merge and $patch
+## Combined schemas and $merge
 
 The standard way of combining and extending schemas is by using the [`allOf`](https://json-schema.org/understanding-json-schema/reference/combining#allOf) (AND), [`anyOf`](https://json-schema.org/understanding-json-schema/reference/combining#anyOf) (OR), [`oneOf`](https://json-schema.org/understanding-json-schema/reference/combining#oneOf) (XOR) and [`not`](https://json-schema.org/understanding-json-schema/reference/combining#not) keywords, all supported by this library.
 
@@ -300,28 +308,50 @@ new Cabidela(schema, { useMerge: true });
 
 You can combine `$merge` with `$id` and `$ref` keywords, which get resolved first, for even more flexibility.
 
-Cabidela also supports `$patch` using [JSON Patch (RFC 6902)](https://datatracker.ietf.org/doc/html/rfc6902). This is useful when an existing value must be replaced or removed rather than merged, such as narrowing an enum:
+## $patch
 
-```json
-{
-  "$patch": {
-    "source": { "$ref": "input" },
-    "with": [
-      {
-        "op": "replace",
-        "path": "/properties/reasoning_effort/enum",
-        "value": ["low", "high", "max"]
-      }
-    ]
-  }
-}
-```
-
-Set `usePatch` to true to enable the keyword:
+Enable `usePatch` to transform a schema with [JSON Patch (RFC 6902)](https://datatracker.ietf.org/doc/html/rfc6902). For example, narrow the allowed reasoning efforts while reusing a shared input schema:
 
 ```js
-new Cabidela(schema, { usePatch: true });
+const schema = {
+  $defs: {
+    input: {
+      type: "object",
+      properties: {
+        reasoning_effort: {
+          type: "string",
+          enum: ["low", "medium", "high"],
+        },
+      },
+      required: ["reasoning_effort"],
+    },
+  },
+  $patch: {
+    source: { $ref: "$defs#/input" },
+    with: [
+      {
+        op: "replace",
+        path: "/properties/reasoning_effort/enum",
+        value: ["low", "high"],
+      },
+    ],
+  },
+};
+
+const cabidela = new Cabidela(schema, { usePatch: true });
+cabidela.validate({ reasoning_effort: "high" }); // true
+cabidela.validate({ reasoning_effort: "medium" }); // throws
 ```
+
+`with` is an ordered array of operations. All six operations are supported: `add`, `remove`, `replace`, `move`, `copy`, and `test`. A failed operation rejects the entire schema update. `null` is an ordinary JSON value; use `remove` to delete a field or array element.
+
+Paths use [JSON Pointer](https://www.rfc-editor.org/rfc/rfc6901): escape `/` as `~1` and `~` as `~0`. An empty path replaces or addresses the whole source; `-` appends to an array for `add`. For example, `{ op: "remove", path: "/properties/reasoning_effort/enum/1" }` removes the second enum entry.
+
+The final result of each `$patch` must be an object schema. Boolean schemas, arrays, scalars, and a removed root cannot be installed as the result. This is a restriction of Cabidela's schema wrapper; JSON Patch itself also supports those document types.
+
+References and enabled extensions in `source` resolve before the operations run. Operation values remain literal JSON during patching. Afterward, references or extensions introduced at schema locations are resolved; data inside `default`, `const`, enum members, examples, and custom annotations is preserved. References can use `$defs#/name` for local definitions or `input` / `input#/path` for a registered schema whose retrieval URI ends in `input`.
+
+`$patch` can be nested in subschemas and combined with `$merge` when both flags are enabled. Existing wrappers around an entire `properties` map also work. A property named `$patch`, `$merge`, or `$ref` remains a property when its value is a schema; complete `source`/`with` wrappers at map level retain their extension meaning.
 
 ## Custom errors
 

@@ -1,4 +1,5 @@
-import { resolvePayload, pathToString, traverseSchema } from "./helpers";
+import { resolvePayload, pathToString } from "./helpers";
+import { resolveSchema, replaceObject } from "./schema";
 
 export type CabidelaOptions = {
   applyDefaults?: boolean;
@@ -24,7 +25,6 @@ export type SchemaNavigation = {
 export class Cabidela {
   private schema: any;
   private options: CabidelaOptions;
-  private definitions: any = {};
   private localDefinitions: any;
   private addedSchemas: Array<any> = [];
 
@@ -32,40 +32,33 @@ export class Cabidela {
     const nextOptions = {
       fullErrors: true,
       subSchemas: [],
+      useMerge: false,
+      usePatch: false,
       applyDefaults: false,
       errorMessages: false,
       ...(options || {}),
     };
     const prepared = this.prepareNewSchema(schema, nextOptions, []);
-    this.schema = this.replaceSchema(schema, prepared.schema);
+    this.schema = replaceObject(schema, prepared.schema);
     this.options = nextOptions;
-    this.definitions = prepared.definitions;
     this.localDefinitions = prepared.localDefinitions;
   }
 
   setSchema(schema: any) {
     const prepared = this.prepareNewSchema(schema, this.options, this.addedSchemas);
-    this.schema = this.replaceSchema(schema, prepared.schema);
-    this.definitions = prepared.definitions;
+    this.schema = replaceObject(schema, prepared.schema);
     this.localDefinitions = prepared.localDefinitions;
   }
 
   addSchema(subSchema: any, combine: boolean = true) {
     const addedSchemas = [...this.addedSchemas, structuredClone(subSchema)];
-    const prepared = this.prepareSchema(
-      this.schema,
-      this.options,
-      this.localDefinitions,
-      addedSchemas,
-      combine,
-    );
-    this.replaceSchema(this.schema, prepared.schema);
-    this.definitions = prepared.definitions;
+    const prepared = this.prepareSchema(this.schema, this.options, this.localDefinitions, addedSchemas, combine);
+    replaceObject(this.schema, prepared.schema);
     this.addedSchemas = addedSchemas;
   }
 
   private registerSchema(definitions: any, subSchema: any) {
-    if (subSchema.hasOwnProperty("$id")) {
+    if (subSchema && Object.hasOwn(subSchema, "$id")) {
       const url = URL.parse(subSchema["$id"]);
       if (url) {
         definitions[url.pathname.split("/").slice(-1)[0]] = structuredClone(subSchema);
@@ -80,23 +73,10 @@ export class Cabidela {
   }
 
   private prepareNewSchema(schema: any, options: CabidelaOptions, addedSchemas: Array<any>) {
-    const candidate = structuredClone(schema);
-    const localDefinitions = candidate["$defs"];
-    delete candidate["$defs"];
+    const localDefinitions = schema["$defs"];
+    const candidate = Object.hasOwn(schema, "$defs") ? { ...schema } : schema;
+    if (candidate !== schema) delete candidate["$defs"];
     return this.prepareSchema(candidate, options, localDefinitions, addedSchemas, true);
-  }
-
-  private replaceSchema(target: any, source: any) {
-    for (const key of Object.keys(target)) delete target[key];
-    for (const key of Object.keys(source)) {
-      Object.defineProperty(target, key, {
-        value: source[key],
-        writable: true,
-        enumerable: true,
-        configurable: true,
-      });
-    }
-    return target;
   }
 
   private prepareSchema(
@@ -106,15 +86,15 @@ export class Cabidela {
     addedSchemas: Array<any>,
     combine: boolean,
   ) {
-    const candidate = structuredClone(schema);
-    const definitions: any = {};
+    let candidate = schema;
+    const definitions: any = Object.create(null);
     if (localDefinitions !== undefined) definitions["$defs"] = structuredClone(localDefinitions);
     for (const subSchema of options.subSchemas as []) this.registerSchema(definitions, subSchema);
     for (const subSchema of addedSchemas) this.registerSchema(definitions, subSchema);
-    if (combine && (options.useMerge || options.usePatch || (options.subSchemas as []).length > 0)) {
-      traverseSchema(options, definitions, candidate);
+    if (combine && (options.useMerge || options.usePatch || Object.keys(definitions).length > 0)) {
+      candidate = resolveSchema(options, definitions, candidate);
     }
-    return { schema: candidate, definitions, localDefinitions };
+    return { schema: candidate, localDefinitions };
   }
 
   getSchema() {
@@ -123,16 +103,9 @@ export class Cabidela {
 
   setOptions(options: CabidelaOptions) {
     const nextOptions = { ...this.options, ...options };
-    const prepared = this.prepareSchema(
-      this.schema,
-      nextOptions,
-      this.localDefinitions,
-      this.addedSchemas,
-      true,
-    );
-    this.replaceSchema(this.schema, prepared.schema);
+    const prepared = this.prepareSchema(this.schema, nextOptions, this.localDefinitions, this.addedSchemas, true);
+    replaceObject(this.schema, prepared.schema);
     this.options = nextOptions;
-    this.definitions = prepared.definitions;
   }
 
   throw(message: string, needle: SchemaNavigation) {
@@ -186,7 +159,7 @@ export class Cabidela {
 
   // Iterates through the properties of an "object" schema
   parseObject(needle: SchemaNavigation): boolean {
-    if (needle.schema.hasOwnProperty("minProperties")) {
+    if (Object.hasOwn(needle.schema, "minProperties")) {
       if (Object.keys(needle.payload).length < needle.schema.minProperties) {
         this.throw(
           `minProperties at '${pathToString(needle.path)}' is ${needle.schema.minProperties}, got ${Object.keys(needle.payload).length}`,
@@ -195,10 +168,10 @@ export class Cabidela {
       }
     }
 
-    if (needle.schema.hasOwnProperty("maxProperties")) {
+    if (Object.hasOwn(needle.schema, "maxProperties")) {
       if (Object.keys(needle.payload).length > needle.schema.maxProperties) {
         this.throw(
-          `maxProperties at '${pathToString(needle.path)}' is ${needle.schema.minProperties}, got ${Object.keys(needle.payload).length}`,
+          `maxProperties at '${pathToString(needle.path)}' is ${needle.schema.maxProperties}, got ${Object.keys(needle.payload).length}`,
           needle,
         );
       }
@@ -207,7 +180,7 @@ export class Cabidela {
     const localEvaluatedProperties = new Set([] as string[]);
     let matchCount: number = 0;
 
-    if (needle.schema.hasOwnProperty("properties")) {
+    if (Object.hasOwn(needle.schema, "properties")) {
       for (let property in needle.schema.properties) {
         const matches = this.parseSubSchema({
           ...needle,
@@ -222,7 +195,7 @@ export class Cabidela {
     }
 
     // additionalProperties only recognizes properties declared in the same subschema as itself.
-    if (needle.schema.hasOwnProperty("additionalProperties")) {
+    if (Object.hasOwn(needle.schema, "additionalProperties")) {
       matchCount += this.parseAdditionalProperties(
         needle,
         needle.schema.additionalProperties,
@@ -231,7 +204,7 @@ export class Cabidela {
     }
 
     // unevaluatedProperties keyword is similar to additionalProperties except that it can recognize properties declared in subschemas.
-    if (needle.schema.hasOwnProperty("unevaluatedProperties")) {
+    if (Object.hasOwn(needle.schema, "unevaluatedProperties")) {
       needle.evaluatedProperties = new Set([...needle.evaluatedProperties, ...localEvaluatedProperties]);
       matchCount += this.parseAdditionalProperties(
         needle,
@@ -241,7 +214,7 @@ export class Cabidela {
     }
 
     // this has to be last
-    if (needle.schema.hasOwnProperty("required")) {
+    if (Object.hasOwn(needle.schema, "required")) {
       if (
         new Set(needle.schema.required.map((r: string) => pathToString([...needle.path, r]))).difference(
           needle.evaluatedProperties.union(localEvaluatedProperties),
@@ -259,20 +232,22 @@ export class Cabidela {
 
     for (let option in list) {
       try {
-        const matches = this.parseSubSchema({
+        const branch = {
           ...needle,
-          schema: { type: needle.schema.type, ...list[option] },
+          schema: { ...(needle.schema.type === undefined ? {} : { type: needle.schema.type }), ...list[option] },
           carryProperties: false,
           absorvErrors: true,
           deferredApplyDefaults: true,
-        });
-        rounds += matches;
+          defaultsCallbacks: [],
+        };
+        this.parseSubSchema(branch);
+        // Validation failures throw. Property/item counts are not branch counts:
+        // an empty object or a multi-item array can each match one whole branch.
+        rounds++;
+        defaultsCallbacks.push(...branch.defaultsCallbacks);
         if (breakCondition && breakCondition(rounds)) break;
-        defaultsCallbacks.push(...needle.defaultsCallbacks);
-        needle.defaultsCallbacks = [];
       } catch (e: any) {
         needle.errors.add(e.message as string);
-        needle.defaultsCallbacks = [];
       }
     }
     for (const callback of defaultsCallbacks) callback();
@@ -286,8 +261,22 @@ export class Cabidela {
       this.throw(`No schema for path '${pathToString(needle.path)}'`, needle);
     }
 
+    const { metadata, resolvedObject } = resolvePayload(needle.path, needle.payload);
+    if (
+      resolvedObject !== undefined &&
+      Object.hasOwn(needle.schema, "type") &&
+      !metadata.types.has(needle.schema.type)
+    ) {
+      this.throw(
+        `Type mismatch of '${pathToString(needle.path)}', '${needle.schema.type}' not in ${Array.from(metadata.types)
+          .map((e) => `'${e}'`)
+          .join(",")}`,
+        needle,
+      );
+    }
+
     // https://json-schema.org/understanding-json-schema/reference/combining#not
-    if (needle.schema.hasOwnProperty("not")) {
+    if (resolvedObject !== undefined && Object.hasOwn(needle.schema, "not")) {
       let pass = false;
       try {
         this.parseSubSchema({
@@ -303,47 +292,31 @@ export class Cabidela {
     }
 
     // To validate against oneOf, the given data must be valid against exactly one of the given subschemas.
-    if (needle.schema.hasOwnProperty("oneOf")) {
+    if (resolvedObject !== undefined && Object.hasOwn(needle.schema, "oneOf")) {
       const rounds = this.parseList(needle.schema.oneOf, needle, (r: number) => r !== 1);
       if (rounds !== 1) {
-        if (needle.path.length == 0) {
-          this.throw(`oneOf at '${pathToString(needle.path)}' not met, ${rounds} matches`, needle);
-        }
-        return 0;
+        this.throw(`oneOf at '${pathToString(needle.path)}' not met, ${rounds} matches found`, needle);
       }
       return 1;
     }
 
     // To validate against anyOf, the given data must be valid against any (one or more) of the given subschemas.
-    if (needle.schema.hasOwnProperty("anyOf")) {
+    if (resolvedObject !== undefined && Object.hasOwn(needle.schema, "anyOf")) {
       if (this.parseList(needle.schema.anyOf, needle, (r: number) => r !== 0) === 0) {
-        if (needle.path.length == 0) {
-          this.throw(`anyOf at '${pathToString(needle.path)}' not met`, needle);
-        }
-        return 0;
+        this.throw(`anyOf at '${pathToString(needle.path)}' not met`, needle);
       }
       return 1;
     }
 
     // To validate against allOf, the given data must be valid against all of the given subschemas.
-    if (needle.schema.hasOwnProperty("allOf")) {
+    if (resolvedObject !== undefined && Object.hasOwn(needle.schema, "allOf")) {
       const conditions = needle.schema.allOf.reduce((r: any, c: any) => Object.assign(r, c), {});
-      try {
-        this.parseSubSchema({
-          ...needle,
-          schema: { type: needle.schema.type, ...conditions },
-          carryProperties: true,
-        });
-      } catch (e: any) {
-        if (needle.path.length == 0) {
-          throw e;
-        }
-        needle.errors.add(e.message as string);
-        return 0;
-      }
+      this.parseSubSchema({
+        ...needle,
+        schema: { ...(needle.schema.type === undefined ? {} : { type: needle.schema.type }), ...conditions },
+        carryProperties: true,
+      });
     }
-
-    const { metadata, resolvedObject } = resolvePayload(needle.path, needle.payload);
 
     // array, but object is not binary
     if (needle.schema.type === "array" && !metadata.types.has("binary") && !metadata.types.has("string")) {
@@ -360,7 +333,7 @@ export class Cabidela {
       return this.parseObject(needle) ? 1 : 0;
     } else if (resolvedObject !== undefined) {
       // This has to be before type checking
-      if (needle.schema.hasOwnProperty("const")) {
+      if (Object.hasOwn(needle.schema, "const")) {
         if (resolvedObject !== needle.schema.const) {
           this.throw(
             `const ${resolvedObject} doesn't match ${needle.schema.const} at '${pathToString(needle.path)}'`,
@@ -373,7 +346,7 @@ export class Cabidela {
         }
       }
       // This has to be before type checking
-      if (needle.schema.hasOwnProperty("enum")) {
+      if (Object.hasOwn(needle.schema, "enum")) {
         if (Array.isArray(needle.schema.enum)) {
           if (!needle.schema.enum.includes(resolvedObject)) {
             this.throw(
@@ -389,24 +362,15 @@ export class Cabidela {
           this.throw(`enum should be an array at '${pathToString(needle.path)}'`, needle);
         }
       }
-      // This has to be after handling enum
-      if (needle.schema.hasOwnProperty("type") && !metadata.types.has(needle.schema.type)) {
-        this.throw(
-          `Type mismatch of '${pathToString(needle.path)}', '${needle.schema.type}' not in ${Array.from(metadata.types)
-            .map((e) => `'${e}'`)
-            .join(",")}`,
-          needle,
-        );
-      }
       /* If property === true, then it's declared validated no matter what the value is */
       if (needle.schema !== true) {
         /* Otherwise check schema type */
         switch (needle.schema.type) {
           case "string":
-            if (needle.schema.hasOwnProperty("maxLength") && metadata.size > needle.schema.maxLength) {
+            if (Object.hasOwn(needle.schema, "maxLength") && metadata.size > needle.schema.maxLength) {
               this.throw(`Length of '${pathToString(needle.path)}' must be <= ${needle.schema.maxLength}`, needle);
             }
-            if (needle.schema.hasOwnProperty("minLength") && metadata.size < needle.schema.minLength) {
+            if (Object.hasOwn(needle.schema, "minLength") && metadata.size < needle.schema.minLength) {
               this.throw(
                 `Length of '${pathToString(needle.path)}' must be >= ${needle.schema.minLength} not met`,
                 needle,
@@ -415,25 +379,25 @@ export class Cabidela {
             break;
           case "number":
           case "integer":
-            if (needle.schema.hasOwnProperty("minimum") && resolvedObject < needle.schema.minimum) {
+            if (Object.hasOwn(needle.schema, "minimum") && resolvedObject < needle.schema.minimum) {
               this.throw(`'${pathToString(needle.path)}' must be >= ${needle.schema.minimum}`, needle);
             }
-            if (needle.schema.hasOwnProperty("exclusiveMinimum") && resolvedObject <= needle.schema.exclusiveMinimum) {
+            if (Object.hasOwn(needle.schema, "exclusiveMinimum") && resolvedObject <= needle.schema.exclusiveMinimum) {
               this.throw(`'${pathToString(needle.path)}' must be > ${needle.schema.exclusiveMinimum}`, needle);
             }
-            if (needle.schema.hasOwnProperty("maximum") && resolvedObject > needle.schema.maximum) {
+            if (Object.hasOwn(needle.schema, "maximum") && resolvedObject > needle.schema.maximum) {
               this.throw(`'${pathToString(needle.path)}' must be <= ${needle.schema.maximum}`, needle);
             }
-            if (needle.schema.hasOwnProperty("exclusiveMaximum") && resolvedObject >= needle.schema.exclusiveMaximum) {
+            if (Object.hasOwn(needle.schema, "exclusiveMaximum") && resolvedObject >= needle.schema.exclusiveMaximum) {
               this.throw(`'${pathToString(needle.path)}' must be < ${needle.schema.exclusiveMaximum}`, needle);
             }
-            if (needle.schema.hasOwnProperty("multipleOf") && resolvedObject % needle.schema.multipleOf !== 0) {
+            if (Object.hasOwn(needle.schema, "multipleOf") && resolvedObject % needle.schema.multipleOf !== 0) {
               this.throw(`'${pathToString(needle.path)}' must be multiple of ${needle.schema.multipleOf}`, needle);
             }
             break;
         }
       }
-      if (needle.schema.hasOwnProperty("pattern")) {
+      if (Object.hasOwn(needle.schema, "pattern")) {
         let passes = false;
         try {
           if (new RegExp(needle.schema.pattern).test(resolvedObject)) passes = true;
@@ -447,7 +411,7 @@ export class Cabidela {
       return 1;
     }
     // Apply defaults
-    if (this.options.applyDefaults === true && needle.schema.hasOwnProperty("default")) {
+    if (this.options.applyDefaults === true && Object.hasOwn(needle.schema, "default")) {
       const applyDefaults = () => {
         needle.path.reduce(function (prev, curr, index) {
           // create objects as needed along the path, if they don't exist, so we can apply defaults at the end

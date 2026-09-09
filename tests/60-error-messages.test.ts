@@ -1,5 +1,11 @@
 import { expect, test, describe, it } from "vitest";
 import { FakeCabidela } from "./lib/fake-cabidela";
+import { Cabidela } from "../src";
+
+test("maxProperties reports the configured upper bound", () => {
+  const c = new Cabidela({ type: "object", minProperties: 0, maxProperties: 1 });
+  expect(() => c.validate({ a: 1, b: 2 })).toThrowError("maxProperties at '/' is 1, got 2");
+});
 
 describe("errorMessages simple", () => {
   let schema = {
@@ -89,13 +95,13 @@ describe("errorMessages oneOf", () => {
       cabidela.validate({
         missing: "property",
       }),
-    ).toThrowError(/oneOf at '.' not met, 0 matches: prompt required, messages required/);
+    ).toThrowError(/oneOf at '.' not met, 0 matches found: prompt required, messages required/);
   });
   test.skipIf(process.env.AJV)("messages need role and content", () => {
     expect(() =>
       cabidela.validate({
         messages: [{ role: "user" }],
       }),
-    ).toThrowError(/oneOf at '.' not met, 0 matches: prompt required, messages need both role and content/);
+    ).toThrowError(/oneOf at '.' not met, 0 matches found: prompt required, messages need both role and content/);
   });
 });
