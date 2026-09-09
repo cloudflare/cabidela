@@ -1,6 +1,6 @@
 {
   "name": "@cloudflare/cabidela",
-  "version": "0.2.4",
+  "version": "0.3.0",
   "description": "Cabidela is a small, fast, eval-less, Cloudflare Workers compatible, dynamic JSON Schema validator",
   "main": "dist/index.js",
   "module": "dist/index.mjs",

@@ -1,7 +1,14 @@
 import { expect, describe, test } from "vitest";
 import { FakeCabidela } from "./lib/fake-cabidela";
+import { Cabidela } from "../src";
 
 describe("$merge", () => {
+  test("preserves literal null values and concatenates whole array elements", () => {
+    const source = { type: "object", default: null, examples: [{ x: 1 }] };
+    const c = new Cabidela({ $merge: { source, with: { default: null, examples: [{ x: 2 }] } } }, { useMerge: true });
+    expect(c.getSchema()).toEqual({ type: "object", default: null, examples: [{ x: 1 }, { x: 2 }] });
+    expect(source.examples).toEqual([{ x: 1 }]);
+  });
   test.skipIf(process.env.AJV)("two objects", () => {
     let schema = {
       $merge: {

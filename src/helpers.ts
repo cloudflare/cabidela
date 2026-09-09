@@ -1,5 +1,3 @@
-import type { CabidelaOptions } from ".";
-
 export type metaData = {
   types: Set<string>;
   size: number;
@@ -13,72 +11,6 @@ export type resolvedResponse = {
 
 export const includesAll = (arr: Array<any>, values: Array<any>) => {
   return values.every((v) => arr.includes(v));
-};
-
-// https://json-schema.org/understanding-json-schema/structuring#dollarref
-export const parse$ref = (ref: string) => {
-  const parts = ref.split("#");
-  return {
-    $id: parts[0],
-    $path: parts[1].split("/").filter((part: string) => part != ""),
-  };
-};
-
-function deepMerge(target: any, source: any) {
-  const result = Array(target) && Array.isArray(source) ? target.concat(source) : { ...target, ...source };
-  for (const key of Object.keys(result)) {
-    result[key] =
-      typeof target[key] == "object" && typeof source[key] == "object"
-        ? deepMerge(target[key], source[key])
-        : structuredClone(result[key]);
-  }
-  return result;
-}
-
-export const traverseSchema = (options: CabidelaOptions, definitions: any, obj: any) => {
-  const ts = (obj: any, cb?: any) => {
-    let hits: number;
-    do {
-      hits = 0;
-      for (const key of Object.keys(obj)) {
-        if (typeof obj[key] == "object") {
-          ts(obj[key], (value: any) => {
-            obj[key] = value;
-            hits++;
-          });
-          if (options.useMerge && key == "$merge") {
-            const merge = deepMerge(obj[key].source, obj[key].with);
-            if (cb) {
-              cb(merge);
-            } else {
-              // root level
-              hits++;
-              Object.assign(obj, merge);
-              delete obj[key];
-            }
-          }
-        } else {
-          if (key == "$ref") {
-            const { $id, $path } = parse$ref(obj[key]);
-            const { resolvedObject } = resolvePayload($path, definitions[$id]);
-            if (resolvedObject) {
-              if (cb) {
-                cb(resolvedObject);
-              } else {
-                // root level
-                hits++;
-                Object.assign(obj, resolvedObject);
-                delete obj[key];
-              }
-            } else {
-              throw new Error(`Could not resolve '${obj[key]}' $ref`);
-            }
-          }
-        }
-      }
-    } while (hits > 0);
-  };
-  ts(obj);
 };
 
 /* Resolves a path in an object

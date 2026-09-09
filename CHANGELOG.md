@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-09-08
+
+### Added
+
+- Added opt-in `$patch` support for all six JSON Patch operations, including array edits and schema references
+
+### Changed
+
+- Schema configuration updates prepare references and extensions before committing, preserving the root object's identity
+- Schema traversal preserves literal JSON data and supports fragmentless references
+- Composition validation counts successful branches and reports nested failures consistently
+- Corrected the `maxProperties` error message
+
 ## [0.2.4] - 2025-03-24
 
 ### Changed
